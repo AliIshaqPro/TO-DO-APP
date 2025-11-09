@@ -2,6 +2,8 @@ import { useState, useEffect } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TaskItem } from "@/components/TaskItem";
 import { AddTaskForm } from "@/components/AddTaskForm";
+import { NotificationCenter, Notification } from "@/components/NotificationCenter";
+import { DateTaskViewer } from "@/components/DateTaskViewer";
 import { Calendar, History, Repeat } from "lucide-react";
 import { toast } from "sonner";
 
@@ -17,12 +19,15 @@ interface Task {
 const Index = () => {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [history, setHistory] = useState<Task[]>([]);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
 
   useEffect(() => {
     const storedTasks = localStorage.getItem("tasks");
     const storedHistory = localStorage.getItem("history");
+    const storedNotifications = localStorage.getItem("notifications");
     if (storedTasks) setTasks(JSON.parse(storedTasks));
     if (storedHistory) setHistory(JSON.parse(storedHistory));
+    if (storedNotifications) setNotifications(JSON.parse(storedNotifications));
   }, []);
 
   useEffect(() => {
@@ -32,6 +37,22 @@ const Index = () => {
   useEffect(() => {
     localStorage.setItem("history", JSON.stringify(history));
   }, [history]);
+
+  useEffect(() => {
+    localStorage.setItem("notifications", JSON.stringify(notifications));
+  }, [notifications]);
+
+  const addNotification = (title: string, message: string, type: "success" | "info" | "warning" = "info") => {
+    const newNotification: Notification = {
+      id: Date.now().toString(),
+      title,
+      message,
+      type,
+      read: false,
+      timestamp: new Date().toISOString(),
+    };
+    setNotifications([newNotification, ...notifications]);
+  };
 
   const addTask = (title: string, recurring: boolean) => {
     const newTask: Task = {
@@ -43,6 +64,11 @@ const Index = () => {
     };
     setTasks([...tasks, newTask]);
     toast.success("Task added!");
+    addNotification(
+      "Task Created",
+      `"${title}" has been added to your ${recurring ? "recurring" : "today's"} tasks`,
+      "success"
+    );
   };
 
   const toggleTask = (id: string) => {
@@ -58,6 +84,11 @@ const Index = () => {
           if (!task.completed) {
             setHistory([updatedTask, ...history]);
             toast.success("Task completed!");
+            addNotification(
+              "Task Completed! 🎉",
+              `Great job completing "${task.title}"`,
+              "success"
+            );
           }
           
           return updatedTask;
@@ -68,13 +99,35 @@ const Index = () => {
   };
 
   const deleteTask = (id: string) => {
+    const task = tasks.find((t) => t.id === id);
     setTasks(tasks.filter((task) => task.id !== id));
     toast("Task deleted");
+    if (task) {
+      addNotification("Task Deleted", `"${task.title}" has been removed`, "warning");
+    }
   };
 
   const deleteHistoryItem = (id: string) => {
+    const task = history.find((t) => t.id === id);
     setHistory(history.filter((task) => task.id !== id));
     toast("History item removed");
+    if (task) {
+      addNotification("History Item Removed", `"${task.title}" has been removed from history`, "info");
+    }
+  };
+
+  const markNotificationAsRead = (id: string) => {
+    setNotifications(
+      notifications.map((n) => (n.id === id ? { ...n, read: true } : n))
+    );
+  };
+
+  const deleteNotification = (id: string) => {
+    setNotifications(notifications.filter((n) => n.id !== id));
+  };
+
+  const clearAllNotifications = () => {
+    setNotifications([]);
   };
 
   const todayTasks = tasks.filter((task) => !task.recurring);
@@ -83,13 +136,26 @@ const Index = () => {
   return (
     <div className="min-h-screen bg-background p-4 md:p-8">
       <div className="max-w-4xl mx-auto">
-        <header className="mb-8">
-          <h1 className="text-4xl font-bold text-foreground mb-2">Task Manager</h1>
-          <p className="text-muted-foreground">Organize your daily tasks and track your progress</p>
-        </header>
+        <div className="flex justify-end mb-6">
+          <NotificationCenter
+            notifications={notifications}
+            onMarkAsRead={markNotificationAsRead}
+            onDelete={deleteNotification}
+            onClearAll={clearAllNotifications}
+          />
+        </div>
 
         <div className="mb-6">
           <AddTaskForm onAdd={addTask} />
+        </div>
+
+        <div className="mb-6 flex justify-end">
+          <DateTaskViewer
+            tasks={tasks}
+            history={history}
+            onToggle={toggleTask}
+            onDelete={deleteTask}
+          />
         </div>
 
         <Tabs defaultValue="today" className="w-full">
