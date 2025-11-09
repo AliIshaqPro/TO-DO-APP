@@ -24,8 +24,8 @@ interface Task {
   title: string;
   completed: boolean;
   recurring: boolean;
-  createdAt: string;
-  completedAt?: string;
+  created_at: string;
+  completed_at?: string;
 }
 
 interface DateTaskViewerProps {
@@ -49,14 +49,14 @@ export const DateTaskViewer = ({
     
     // Get tasks created on this date
     const createdTasks = tasks.filter((task) => {
-      const taskDate = format(new Date(task.createdAt), "yyyy-MM-dd");
+      const taskDate = format(new Date(task.created_at), "yyyy-MM-dd");
       return taskDate === dateStr;
     });
 
     // Get tasks completed on this date from history
     const completedTasks = history.filter((task) => {
-      if (!task.completedAt) return false;
-      const completedDate = format(new Date(task.completedAt), "yyyy-MM-dd");
+      if (!task.completed_at) return false;
+      const completedDate = format(new Date(task.completed_at), "yyyy-MM-dd");
       return completedDate === dateStr;
     });
 

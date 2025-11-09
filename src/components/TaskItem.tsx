@@ -1,7 +1,9 @@
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
-import { Repeat, Trash2 } from "lucide-react";
+import { Repeat, Trash2, GripVertical } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useSortable } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 interface TaskItemProps {
   id: string;
@@ -12,6 +14,7 @@ interface TaskItemProps {
   onDelete: (id: string) => void;
   showDate?: boolean;
   completedAt?: string;
+  completed_at?: string;
 }
 
 export const TaskItem = ({
@@ -23,14 +26,41 @@ export const TaskItem = ({
   onDelete,
   showDate,
   completedAt,
+  completed_at,
 }: TaskItemProps) => {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
+  const displayDate = completedAt || completed_at;
+
   return (
     <div
+      ref={setNodeRef}
+      style={style}
       className={cn(
         "group flex items-center gap-3 p-4 rounded-xl bg-card border border-border transition-smooth shadow-task hover:shadow-task-hover",
-        completed && "opacity-60"
+        completed && "opacity-60",
+        isDragging && "opacity-50 z-50"
       )}
     >
+      <button
+        className="cursor-grab active:cursor-grabbing touch-none text-muted-foreground hover:text-foreground transition-colors"
+        {...attributes}
+        {...listeners}
+      >
+        <GripVertical className="h-5 w-5" />
+      </button>
       <Checkbox
         id={id}
         checked={completed}
@@ -55,9 +85,9 @@ export const TaskItem = ({
           </div>
         )}
         
-        {showDate && completedAt && (
+        {showDate && displayDate && (
           <span className="text-xs text-muted-foreground">
-            {new Date(completedAt).toLocaleDateString()}
+            {new Date(displayDate).toLocaleDateString()}
           </span>
         )}
         

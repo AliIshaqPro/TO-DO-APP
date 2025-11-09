@@ -1,142 +1,323 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Button } from "@/components/ui/button";
 import { TaskItem } from "@/components/TaskItem";
 import { AddTaskForm } from "@/components/AddTaskForm";
 import { NotificationCenter, Notification } from "@/components/NotificationCenter";
 import { DateTaskViewer } from "@/components/DateTaskViewer";
-import { Calendar, History, Repeat } from "lucide-react";
+import { Calendar, History, Repeat, LogOut } from "lucide-react";
 import { toast } from "sonner";
+import { useAuth } from "@/hooks/useAuth";
+import { supabase } from "@/integrations/supabase/client";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
 
 interface Task {
   id: string;
   title: string;
   completed: boolean;
   recurring: boolean;
-  createdAt: string;
-  completedAt?: string;
+  created_at: string;
+  completed_at?: string;
+  position: number;
+  user_id: string;
 }
 
 const Index = () => {
+  const { user, loading: authLoading, signOut } = useAuth();
+  const navigate = useNavigate();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [history, setHistory] = useState<Task[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
 
   useEffect(() => {
-    const storedTasks = localStorage.getItem("tasks");
-    const storedHistory = localStorage.getItem("history");
-    const storedNotifications = localStorage.getItem("notifications");
-    if (storedTasks) setTasks(JSON.parse(storedTasks));
-    if (storedHistory) setHistory(JSON.parse(storedHistory));
-    if (storedNotifications) setNotifications(JSON.parse(storedNotifications));
-  }, []);
+    if (!authLoading && !user) {
+      navigate("/auth");
+    }
+  }, [user, authLoading, navigate]);
 
   useEffect(() => {
-    localStorage.setItem("tasks", JSON.stringify(tasks));
-  }, [tasks]);
+    if (user) {
+      fetchTasks();
+      fetchNotifications();
+    }
+  }, [user]);
 
-  useEffect(() => {
-    localStorage.setItem("history", JSON.stringify(history));
-  }, [history]);
+  const fetchTasks = async () => {
+    setLoading(true);
+    const { data, error } = await supabase
+      .from("tasks")
+      .select("*")
+      .order("position", { ascending: true });
 
-  useEffect(() => {
-    localStorage.setItem("notifications", JSON.stringify(notifications));
-  }, [notifications]);
-
-  const addNotification = (title: string, message: string, type: "success" | "info" | "warning" = "info") => {
-    const newNotification: Notification = {
-      id: Date.now().toString(),
-      title,
-      message,
-      type,
-      read: false,
-      timestamp: new Date().toISOString(),
-    };
-    setNotifications([newNotification, ...notifications]);
+    if (error) {
+      toast.error("Failed to load tasks");
+      console.error(error);
+    } else {
+      const activeTasks = data.filter((t) => !t.completed);
+      const completedTasks = data.filter((t) => t.completed);
+      setTasks(activeTasks);
+      setHistory(completedTasks);
+    }
+    setLoading(false);
   };
 
-  const addTask = (title: string, recurring: boolean) => {
-    const newTask: Task = {
-      id: Date.now().toString(),
-      title,
-      completed: false,
-      recurring,
-      createdAt: new Date().toISOString(),
-    };
-    setTasks([...tasks, newTask]);
-    toast.success("Task added!");
-    addNotification(
-      "Task Created",
-      `"${title}" has been added to your ${recurring ? "recurring" : "today's"} tasks`,
-      "success"
-    );
+  const fetchNotifications = async () => {
+    const { data, error } = await supabase
+      .from("notifications")
+      .select("*")
+      .order("timestamp", { ascending: false });
+
+    if (error) {
+      console.error(error);
+    } else {
+      setNotifications(data.map(n => ({
+        ...n,
+        type: n.type as "success" | "info" | "warning"
+      })));
+    }
   };
 
-  const toggleTask = (id: string) => {
-    setTasks(
-      tasks.map((task) => {
-        if (task.id === id) {
-          const updatedTask = {
-            ...task,
-            completed: !task.completed,
-            completedAt: !task.completed ? new Date().toISOString() : undefined,
-          };
-          
-          if (!task.completed) {
-            setHistory([updatedTask, ...history]);
-            toast.success("Task completed!");
-            addNotification(
-              "Task Completed! 🎉",
-              `Great job completing "${task.title}"`,
-              "success"
-            );
-          }
-          
-          return updatedTask;
-        }
-        return task;
+  const addNotification = async (
+    title: string,
+    message: string,
+    type: "success" | "info" | "warning" = "info"
+  ) => {
+    if (!user) return;
+
+    const { data, error } = await supabase
+      .from("notifications")
+      .insert({
+        user_id: user.id,
+        title,
+        message,
+        type,
+        read: false,
       })
-    );
+      .select()
+      .single();
+
+    if (error) {
+      console.error(error);
+    } else {
+      setNotifications([{ ...data, type: data.type as "success" | "info" | "warning" }, ...notifications]);
+    }
   };
 
-  const deleteTask = (id: string) => {
+  const addTask = async (title: string, recurring: boolean) => {
+    if (!user) return;
+
+    const maxPosition = tasks.length > 0 ? Math.max(...tasks.map((t) => t.position)) : -1;
+
+    const { data, error } = await supabase
+      .from("tasks")
+      .insert({
+        user_id: user.id,
+        title,
+        recurring,
+        completed: false,
+        position: maxPosition + 1,
+      })
+      .select()
+      .single();
+
+    if (error) {
+      toast.error("Failed to add task");
+      console.error(error);
+    } else {
+      setTasks([...tasks, data]);
+      toast.success("Task added!");
+      addNotification(
+        "Task Created",
+        `"${title}" has been added to your ${recurring ? "recurring" : "today's"} tasks`,
+        "success"
+      );
+    }
+  };
+
+  const toggleTask = async (id: string) => {
+    const task = tasks.find((t) => t.id === id) || history.find((t) => t.id === id);
+    if (!task) return;
+
+    const newCompleted = !task.completed;
+    const { error } = await supabase
+      .from("tasks")
+      .update({
+        completed: newCompleted,
+        completed_at: newCompleted ? new Date().toISOString() : null,
+      })
+      .eq("id", id);
+
+    if (error) {
+      toast.error("Failed to update task");
+      console.error(error);
+    } else {
+      if (newCompleted) {
+        setTasks(tasks.filter((t) => t.id !== id));
+        setHistory([{ ...task, completed: true, completed_at: new Date().toISOString() }, ...history]);
+        toast.success("Task completed!");
+        addNotification("Task Completed! 🎉", `Great job completing "${task.title}"`, "success");
+      } else {
+        setHistory(history.filter((t) => t.id !== id));
+        setTasks([...tasks, { ...task, completed: false, completed_at: undefined }]);
+      }
+    }
+  };
+
+  const deleteTask = async (id: string) => {
     const task = tasks.find((t) => t.id === id);
-    setTasks(tasks.filter((task) => task.id !== id));
-    toast("Task deleted");
-    if (task) {
-      addNotification("Task Deleted", `"${task.title}" has been removed`, "warning");
+    const { error } = await supabase.from("tasks").delete().eq("id", id);
+
+    if (error) {
+      toast.error("Failed to delete task");
+      console.error(error);
+    } else {
+      setTasks(tasks.filter((t) => t.id !== id));
+      toast("Task deleted");
+      if (task) {
+        addNotification("Task Deleted", `"${task.title}" has been removed`, "warning");
+      }
     }
   };
 
-  const deleteHistoryItem = (id: string) => {
+  const deleteHistoryItem = async (id: string) => {
     const task = history.find((t) => t.id === id);
-    setHistory(history.filter((task) => task.id !== id));
-    toast("History item removed");
-    if (task) {
-      addNotification("History Item Removed", `"${task.title}" has been removed from history`, "info");
+    const { error } = await supabase.from("tasks").delete().eq("id", id);
+
+    if (error) {
+      toast.error("Failed to delete history item");
+      console.error(error);
+    } else {
+      setHistory(history.filter((t) => t.id !== id));
+      toast("History item removed");
+      if (task) {
+        addNotification("History Item Removed", `"${task.title}" has been removed from history`, "info");
+      }
     }
   };
 
-  const markNotificationAsRead = (id: string) => {
-    setNotifications(
-      notifications.map((n) => (n.id === id ? { ...n, read: true } : n))
+  const markNotificationAsRead = async (id: string) => {
+    const { error } = await supabase
+      .from("notifications")
+      .update({ read: true })
+      .eq("id", id);
+
+    if (error) {
+      console.error(error);
+    } else {
+      setNotifications(notifications.map((n) => (n.id === id ? { ...n, read: true } : n)));
+    }
+  };
+
+  const deleteNotification = async (id: string) => {
+    const { error } = await supabase.from("notifications").delete().eq("id", id);
+
+    if (error) {
+      console.error(error);
+    } else {
+      setNotifications(notifications.filter((n) => n.id !== id));
+    }
+  };
+
+  const clearAllNotifications = async () => {
+    if (!user) return;
+
+    const { error } = await supabase.from("notifications").delete().eq("user_id", user.id);
+
+    if (error) {
+      console.error(error);
+    } else {
+      setNotifications([]);
+    }
+  };
+
+  const handleDragEnd = async (event: DragEndEvent, isRecurring: boolean) => {
+    const { active, over } = event;
+
+    if (!over || active.id === over.id) return;
+
+    const taskList = isRecurring ? recurringTasks : todayTasks;
+    const oldIndex = taskList.findIndex((t) => t.id === active.id);
+    const newIndex = taskList.findIndex((t) => t.id === over.id);
+
+    const newOrder = arrayMove(taskList, oldIndex, newIndex);
+    const updatedTasks = newOrder.map((task, index) => ({
+      ...task,
+      position: index,
+    }));
+
+    // Optimistic update
+    const otherTasks = tasks.filter((t) => t.recurring !== isRecurring);
+    setTasks([...otherTasks, ...updatedTasks]);
+
+    // Update positions in database
+    const updates = updatedTasks.map((task) =>
+      supabase.from("tasks").update({ position: task.position }).eq("id", task.id)
     );
+
+    const results = await Promise.all(updates);
+    const errors = results.filter((r) => r.error);
+
+    if (errors.length > 0) {
+      toast.error("Failed to update task order");
+      fetchTasks(); // Revert on error
+    }
   };
 
-  const deleteNotification = (id: string) => {
-    setNotifications(notifications.filter((n) => n.id !== id));
+  const handleLogout = async () => {
+    const { error } = await signOut();
+    if (error) {
+      toast.error("Failed to sign out");
+    } else {
+      toast.success("Signed out successfully");
+      navigate("/auth");
+    }
   };
 
-  const clearAllNotifications = () => {
-    setNotifications([]);
-  };
+  const todayTasks = tasks.filter((task) => !task.recurring).sort((a, b) => a.position - b.position);
+  const recurringTasks = tasks.filter((task) => task.recurring).sort((a, b) => a.position - b.position);
 
-  const todayTasks = tasks.filter((task) => !task.recurring);
-  const recurringTasks = tasks.filter((task) => task.recurring);
+  if (authLoading || loading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-muted-foreground">Loading...</div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return null;
+  }
 
   return (
     <div className="min-h-screen bg-background p-4 md:p-8">
       <div className="max-w-4xl mx-auto">
-        <div className="flex justify-end mb-6">
+        <div className="flex justify-between items-center mb-6">
+          <Button variant="ghost" size="icon" onClick={handleLogout}>
+            <LogOut className="h-5 w-5" />
+          </Button>
           <NotificationCenter
             notifications={notifications}
             onMarkAsRead={markNotificationAsRead}
@@ -175,39 +356,61 @@ const Index = () => {
           </TabsList>
 
           <TabsContent value="today" className="space-y-3 mt-6">
-            {todayTasks.length === 0 ? (
-              <div className="text-center py-12 text-muted-foreground">
-                <Calendar className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                <p>No tasks for today. Add one to get started!</p>
-              </div>
-            ) : (
-              todayTasks.map((task) => (
-                <TaskItem
-                  key={task.id}
-                  {...task}
-                  onToggle={toggleTask}
-                  onDelete={deleteTask}
-                />
-              ))
-            )}
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={(e) => handleDragEnd(e, false)}
+            >
+              <SortableContext items={todayTasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
+                {todayTasks.length === 0 ? (
+                  <div className="text-center py-12 text-muted-foreground">
+                    <Calendar className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                    <p>No tasks for today. Add one to get started!</p>
+                  </div>
+                ) : (
+                  todayTasks.map((task) => (
+                    <TaskItem
+                      key={task.id}
+                      id={task.id}
+                      title={task.title}
+                      completed={task.completed}
+                      recurring={task.recurring}
+                      onToggle={toggleTask}
+                      onDelete={deleteTask}
+                    />
+                  ))
+                )}
+              </SortableContext>
+            </DndContext>
           </TabsContent>
 
           <TabsContent value="recurring" className="space-y-3 mt-6">
-            {recurringTasks.length === 0 ? (
-              <div className="text-center py-12 text-muted-foreground">
-                <Repeat className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                <p>No recurring tasks yet. Create daily habits!</p>
-              </div>
-            ) : (
-              recurringTasks.map((task) => (
-                <TaskItem
-                  key={task.id}
-                  {...task}
-                  onToggle={toggleTask}
-                  onDelete={deleteTask}
-                />
-              ))
-            )}
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={(e) => handleDragEnd(e, true)}
+            >
+              <SortableContext items={recurringTasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
+                {recurringTasks.length === 0 ? (
+                  <div className="text-center py-12 text-muted-foreground">
+                    <Repeat className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                    <p>No recurring tasks yet. Create daily habits!</p>
+                  </div>
+                ) : (
+                  recurringTasks.map((task) => (
+                    <TaskItem
+                      key={task.id}
+                      id={task.id}
+                      title={task.title}
+                      completed={task.completed}
+                      recurring={task.recurring}
+                      onToggle={toggleTask}
+                      onDelete={deleteTask}
+                    />
+                  ))
+                )}
+              </SortableContext>
+            </DndContext>
           </TabsContent>
 
           <TabsContent value="history" className="space-y-3 mt-6">
@@ -220,10 +423,14 @@ const Index = () => {
               history.map((task) => (
                 <TaskItem
                   key={task.id}
-                  {...task}
+                  id={task.id}
+                  title={task.title}
+                  completed={task.completed}
+                  recurring={task.recurring}
                   onToggle={toggleTask}
                   onDelete={deleteHistoryItem}
                   showDate
+                  completedAt={task.completed_at}
                 />
               ))
             )}
