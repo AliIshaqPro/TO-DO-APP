@@ -70,9 +70,8 @@ export const DateTaskViewer = ({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="outline" className="gap-2">
-          <CalendarIcon className="h-4 w-4" />
-          View by Date
+        <Button variant="outline" size="icon">
+          <CalendarIcon className="h-5 w-5" />
         </Button>
       </DialogTrigger>
       <DialogContent className="max-w-2xl">
@@ -89,7 +88,7 @@ export const DateTaskViewer = ({
               <Button
                 variant="outline"
                 className={cn(
-                  "w-full justify-start text-left font-normal",
+                  "w-full justify-start text-left font-normal hover:bg-primary/10 hover:text-primary hover:border-primary/50",
                   !selectedDate && "text-muted-foreground"
                 )}
               >

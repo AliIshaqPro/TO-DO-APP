@@ -7,6 +7,7 @@ import { TaskItem } from "@/components/TaskItem";
 import { AddTaskForm } from "@/components/AddTaskForm";
 import { NotificationCenter, Notification } from "@/components/NotificationCenter";
 import { DateTaskViewer } from "@/components/DateTaskViewer";
+import { PerformanceReports } from "@/components/PerformanceReports";
 import { Calendar, History, Repeat, LogOut, ArrowUp } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
@@ -186,13 +187,32 @@ const Index = () => {
       console.error(error);
     } else {
       if (newCompleted) {
-        setTasks(tasks.filter((t) => t.id !== id));
-        setHistory([{ ...task, completed: true, completed_at: new Date().toISOString() }, ...history]);
+        // For recurring tasks, keep them in tasks list but mark as completed
+        // For regular tasks, move them to history
+        if (task.recurring) {
+          setTasks(tasks.map((t) => 
+            t.id === id 
+              ? { ...t, completed: true, completed_at: new Date().toISOString() }
+              : t
+          ));
+        } else {
+          setTasks(tasks.filter((t) => t.id !== id));
+          setHistory([{ ...task, completed: true, completed_at: new Date().toISOString() }, ...history]);
+        }
         toast.success("Task completed!");
         addNotification("Task Completed! 🎉", `Great job completing "${task.title}"`, "success");
       } else {
-        setHistory(history.filter((t) => t.id !== id));
-        setTasks([...tasks, { ...task, completed: false, completed_at: undefined }]);
+        // Uncompleting a task
+        if (task.recurring) {
+          setTasks(tasks.map((t) => 
+            t.id === id 
+              ? { ...t, completed: false, completed_at: undefined }
+              : t
+          ));
+        } else {
+          setHistory(history.filter((t) => t.id !== id));
+          setTasks([...tasks, { ...task, completed: false, completed_at: undefined }]);
+        }
       }
     }
   };
@@ -311,6 +331,7 @@ const Index = () => {
   const recurringTasks = tasks.filter((task) => task.recurring).sort((a, b) => a.position - b.position);
   const allTodayTasks = [...todayTasks, ...recurringTasks].sort((a, b) => a.position - b.position);
 
+  // Only count incomplete tasks for progress (recurring tasks count even when completed)
   const completedCount = allTodayTasks.filter((t) => t.completed).length;
   const totalCount = allTodayTasks.length;
   const progressPercentage = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
@@ -339,12 +360,21 @@ const Index = () => {
             <Button variant="ghost" size="icon" onClick={handleLogout}>
               <LogOut className="h-5 w-5" />
             </Button>
-            <NotificationCenter
-              notifications={notifications}
-              onMarkAsRead={markNotificationAsRead}
-              onDelete={deleteNotification}
-              onClearAll={clearAllNotifications}
-            />
+            <div className="flex items-center gap-2">
+              <DateTaskViewer
+                tasks={tasks}
+                history={history}
+                onToggle={toggleTask}
+                onDelete={deleteTask}
+              />
+              <PerformanceReports userId={user.id} />
+              <NotificationCenter
+                notifications={notifications}
+                onMarkAsRead={markNotificationAsRead}
+                onDelete={deleteNotification}
+                onClearAll={clearAllNotifications}
+              />
+            </div>
           </div>
           {totalCount > 0 && (
             <div className="space-y-2">
@@ -359,15 +389,6 @@ const Index = () => {
 
         <div className="mb-6">
           <AddTaskForm onAdd={addTask} />
-        </div>
-
-        <div className="mb-6 flex justify-end">
-          <DateTaskViewer
-            tasks={tasks}
-            history={history}
-            onToggle={toggleTask}
-            onDelete={deleteTask}
-          />
         </div>
 
         <Tabs defaultValue="today" className="w-full">

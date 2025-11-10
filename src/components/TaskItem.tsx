@@ -1,9 +1,20 @@
-import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
-import { Repeat, Trash2, GripVertical } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { Repeat, Trash2, GripVertical, CheckCircle2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { Badge } from "@/components/ui/badge";
 
 interface TaskItemProps {
   id: string;
@@ -65,37 +76,62 @@ export const TaskItem = ({
           <GripVertical className="h-5 w-5" />
         </button>
       )}
-      {showCheckbox && (
-        <Checkbox
-          id={id}
-          checked={completed}
-          onCheckedChange={() => onToggle(id)}
-          className="h-5 w-5"
-        />
-      )}
-      <label
-        htmlFor={showCheckbox ? id : undefined}
+      
+      <div
         className={cn(
           "flex-1 text-base transition-smooth",
-          showCheckbox && "cursor-pointer",
           completed && "line-through text-muted-foreground"
         )}
       >
         {title}
-      </label>
+      </div>
       
       <div className="flex items-center gap-2">
         {recurring && (
-          <div className="flex items-center gap-1 text-xs text-primary bg-primary/10 px-2 py-1 rounded-md">
-            <Repeat className="h-3 w-3" />
-            <span>Daily</span>
-          </div>
+          <Badge variant="secondary" className="text-xs bg-primary/10 text-primary border-primary/20">
+            <Repeat className="h-3 w-3 mr-1" />
+            Daily
+          </Badge>
         )}
         
         {showDate && displayDate && (
           <span className="text-xs text-muted-foreground">
             {new Date(displayDate).toLocaleDateString()}
           </span>
+        )}
+
+        {showCheckbox && !completed && (
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                size="sm"
+                className="bg-primary hover:bg-primary/90 text-primary-foreground"
+              >
+                <CheckCircle2 className="h-4 w-4 mr-1" />
+                Mark as Completed
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent className="max-w-md">
+              <AlertDialogHeader>
+                <AlertDialogTitle className="flex items-center gap-2">
+                  <CheckCircle2 className="h-5 w-5 text-primary" />
+                  Complete Task?
+                </AlertDialogTitle>
+                <AlertDialogDescription className="text-base pt-2">
+                  Are you sure you want to mark <span className="font-semibold text-foreground">"{title}"</span> as completed?
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={() => onToggle(id)}
+                  className="bg-primary hover:bg-primary/90"
+                >
+                  Confirm
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         )}
         
         <Button
