@@ -43,7 +43,6 @@ const Index = () => {
   const { user, loading: authLoading, signOut } = useAuth();
   const navigate = useNavigate();
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [history, setHistory] = useState<Task[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
   const [showScrollTop, setShowScrollTop] = useState(false);
@@ -88,10 +87,7 @@ const Index = () => {
       toast.error("Failed to load tasks");
       console.error(error);
     } else {
-      const activeTasks = data.filter((t) => !t.completed);
-      const completedTasks = data.filter((t) => t.completed);
-      setTasks(activeTasks);
-      setHistory(completedTasks);
+      setTasks(data);
     }
     setLoading(false);
   };
@@ -170,7 +166,7 @@ const Index = () => {
   };
 
   const toggleTask = async (id: string) => {
-    const task = tasks.find((t) => t.id === id) || history.find((t) => t.id === id);
+    const task = tasks.find((t) => t.id === id);
     if (!task) return;
 
     const newCompleted = !task.completed;
@@ -187,32 +183,21 @@ const Index = () => {
       console.error(error);
     } else {
       if (newCompleted) {
-        // For recurring tasks, keep them in tasks list but mark as completed
-        // For regular tasks, move them to history
-        if (task.recurring) {
-          setTasks(tasks.map((t) => 
-            t.id === id 
-              ? { ...t, completed: true, completed_at: new Date().toISOString() }
-              : t
-          ));
-        } else {
-          setTasks(tasks.filter((t) => t.id !== id));
-          setHistory([{ ...task, completed: true, completed_at: new Date().toISOString() }, ...history]);
-        }
+        // Keep all tasks in tasks list but mark as completed
+        setTasks(tasks.map((t) => 
+          t.id === id 
+            ? { ...t, completed: true, completed_at: new Date().toISOString() }
+            : t
+        ));
         toast.success("Task completed!");
         addNotification("Task Completed! 🎉", `Great job completing "${task.title}"`, "success");
       } else {
         // Uncompleting a task
-        if (task.recurring) {
-          setTasks(tasks.map((t) => 
-            t.id === id 
-              ? { ...t, completed: false, completed_at: undefined }
-              : t
-          ));
-        } else {
-          setHistory(history.filter((t) => t.id !== id));
-          setTasks([...tasks, { ...task, completed: false, completed_at: undefined }]);
-        }
+        setTasks(tasks.map((t) => 
+          t.id === id 
+            ? { ...t, completed: false, completed_at: undefined }
+            : t
+        ));
       }
     }
   };
@@ -234,17 +219,17 @@ const Index = () => {
   };
 
   const deleteHistoryItem = async (id: string) => {
-    const task = history.find((t) => t.id === id);
+    const task = tasks.find((t) => t.id === id);
     const { error } = await supabase.from("tasks").delete().eq("id", id);
 
     if (error) {
-      toast.error("Failed to delete history item");
+      toast.error("Failed to delete task");
       console.error(error);
     } else {
-      setHistory(history.filter((t) => t.id !== id));
-      toast("History item removed");
+      setTasks(tasks.filter((t) => t.id !== id));
+      toast("Task deleted");
       if (task) {
-        addNotification("History Item Removed", `"${task.title}" has been removed from history`, "info");
+        addNotification("Task Deleted", `"${task.title}" has been removed`, "warning");
       }
     }
   };
@@ -327,9 +312,14 @@ const Index = () => {
     }
   };
 
-  const todayTasks = tasks.filter((task) => !task.recurring).sort((a, b) => a.position - b.position);
+  const todayTasks = tasks.filter((task) => !task.recurring && !task.completed).sort((a, b) => a.position - b.position);
   const recurringTasks = tasks.filter((task) => task.recurring).sort((a, b) => a.position - b.position);
   const allTodayTasks = [...todayTasks, ...recurringTasks].sort((a, b) => a.position - b.position);
+  const completedTasks = tasks.filter((task) => task.completed).sort((a, b) => {
+    const dateA = new Date(a.completed_at || 0).getTime();
+    const dateB = new Date(b.completed_at || 0).getTime();
+    return dateB - dateA; // Most recent first
+  });
 
   // Only count incomplete tasks for progress (recurring tasks count even when completed)
   const completedCount = allTodayTasks.filter((t) => t.completed).length;
@@ -363,7 +353,7 @@ const Index = () => {
             <div className="flex items-center gap-2">
               <DateTaskViewer
                 tasks={tasks}
-                history={history}
+                history={completedTasks}
                 onToggle={toggleTask}
                 onDelete={deleteTask}
               />
@@ -459,13 +449,13 @@ const Index = () => {
           </TabsContent>
 
           <TabsContent value="history" className="space-y-3 mt-6">
-            {history.length === 0 ? (
+            {completedTasks.length === 0 ? (
               <div className="text-center py-12 text-muted-foreground">
                 <History className="h-12 w-12 mx-auto mb-3 opacity-50" />
                 <p>No completed tasks yet. Keep going!</p>
               </div>
             ) : (
-              history.map((task) => (
+              completedTasks.map((task) => (
                 <TaskItem
                   key={task.id}
                   id={task.id}
@@ -476,6 +466,7 @@ const Index = () => {
                   onDelete={deleteHistoryItem}
                   showDate
                   completedAt={task.completed_at}
+                  showCheckbox={false}
                 />
               ))
             )}

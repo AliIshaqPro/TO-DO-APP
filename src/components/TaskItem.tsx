@@ -104,11 +104,10 @@ export const TaskItem = ({
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button
-                size="sm"
-                className="bg-primary hover:bg-primary/90 text-primary-foreground"
+                size="icon"
+                className="bg-primary hover:bg-primary/90 text-primary-foreground h-9 w-9"
               >
-                <CheckCircle2 className="h-4 w-4 mr-1" />
-                Mark as Completed
+                <CheckCircle2 className="h-4 w-4" />
               </Button>
             </AlertDialogTrigger>
             <AlertDialogContent className="max-w-md">

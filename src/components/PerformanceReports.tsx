@@ -10,18 +10,26 @@ import {
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { BarChart3 } from "lucide-react";
+import { BarChart3, TrendingUp, Target, Calendar } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { startOfWeek, endOfWeek, startOfMonth, endOfMonth, format } from "date-fns";
+import { startOfWeek, endOfWeek, startOfMonth, endOfMonth, format, addWeeks } from "date-fns";
 
 interface PerformanceReportsProps {
   userId: string;
 }
 
+interface WeekStats {
+  weekNumber: number;
+  completed: number;
+  score: number;
+  dateRange: string;
+}
+
 export const PerformanceReports = ({ userId }: PerformanceReportsProps) => {
   const [open, setOpen] = useState(false);
-  const [weeklyStats, setWeeklyStats] = useState({ completed: 0, score: 0 });
-  const [monthlyStats, setMonthlyStats] = useState({ completed: 0, score: 0 });
+  const [weeklyStats, setWeeklyStats] = useState({ completed: 0, score: 0, scoreOutOf100: 0 });
+  const [monthlyStats, setMonthlyStats] = useState({ completed: 0, score: 0, scoreOutOf100: 0 });
+  const [weeklyBreakdown, setWeeklyBreakdown] = useState<WeekStats[]>([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -64,8 +72,41 @@ export const PerformanceReports = ({ userId }: PerformanceReportsProps) => {
     const weeklyScore = weeklyData?.reduce((sum, task) => sum + (task.recurring ? 2 : 1), 0) || 0;
     const monthlyScore = monthlyData?.reduce((sum, task) => sum + (task.recurring ? 2 : 1), 0) || 0;
 
-    setWeeklyStats({ completed: weeklyCompleted, score: weeklyScore });
-    setMonthlyStats({ completed: monthlyCompleted, score: monthlyScore });
+    // Calculate score out of 100 (normalize to 100)
+    const maxWeeklyScore = 50; // Assume ~7 tasks per day, ~3.5 days worth = ~25 tasks, half recurring = 37.5, round to 50
+    const maxMonthlyScore = 200; // Assume ~30 days, 200 is reasonable
+    const weeklyScoreOutOf100 = Math.min(100, Math.round((weeklyScore / maxWeeklyScore) * 100));
+    const monthlyScoreOutOf100 = Math.min(100, Math.round((monthlyScore / maxMonthlyScore) * 100));
+
+    setWeeklyStats({ completed: weeklyCompleted, score: weeklyScore, scoreOutOf100: weeklyScoreOutOf100 });
+    setMonthlyStats({ completed: monthlyCompleted, score: monthlyScore, scoreOutOf100: monthlyScoreOutOf100 });
+
+    // Calculate weekly breakdown for the month
+    const weeks: WeekStats[] = [];
+    for (let i = 0; i < 4; i++) {
+      const weekStartDate = addWeeks(monthStart, i);
+      const weekEndDate = endOfWeek(weekStartDate, { weekStartsOn: 1 });
+      
+      const { data: weekData } = await supabase
+        .from("tasks")
+        .select("*")
+        .eq("user_id", userId)
+        .eq("completed", true)
+        .gte("completed_at", weekStartDate.toISOString())
+        .lte("completed_at", weekEndDate.toISOString());
+
+      const weekCompleted = weekData?.length || 0;
+      const weekScore = weekData?.reduce((sum, task) => sum + (task.recurring ? 2 : 1), 0) || 0;
+
+      weeks.push({
+        weekNumber: i + 1,
+        completed: weekCompleted,
+        score: weekScore,
+        dateRange: `${format(weekStartDate, "MMM d")} - ${format(weekEndDate, "MMM d")}`
+      });
+    }
+
+    setWeeklyBreakdown(weeks);
     setLoading(false);
   };
 
@@ -76,72 +117,146 @@ export const PerformanceReports = ({ userId }: PerformanceReportsProps) => {
           <BarChart3 className="h-5 w-5" />
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Performance Reports</DialogTitle>
+          <DialogTitle className="flex items-center gap-2 text-2xl">
+            <BarChart3 className="h-6 w-6 text-primary" />
+            Performance Reports
+          </DialogTitle>
           <DialogDescription>
-            Track your productivity with weekly and monthly statistics
+            Track your productivity with detailed weekly and monthly analytics
           </DialogDescription>
         </DialogHeader>
 
         <Tabs defaultValue="weekly" className="w-full">
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="weekly">Weekly</TabsTrigger>
-            <TabsTrigger value="monthly">Monthly</TabsTrigger>
+          <TabsList className="grid w-full grid-cols-2 h-11">
+            <TabsTrigger value="weekly" className="text-base">Weekly Report</TabsTrigger>
+            <TabsTrigger value="monthly" className="text-base">Monthly Report</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="weekly" className="space-y-4 mt-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">This Week</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {loading ? (
-                  <p className="text-muted-foreground">Loading...</p>
-                ) : (
-                  <>
-                    <div className="flex justify-between items-center p-4 bg-card border border-border rounded-lg">
-                      <span className="text-muted-foreground">Tasks Completed</span>
-                      <span className="text-2xl font-bold text-primary">{weeklyStats.completed}</span>
+          <TabsContent value="weekly" className="space-y-4 mt-6">
+            {loading ? (
+              <div className="flex items-center justify-center py-12">
+                <p className="text-muted-foreground">Loading...</p>
+              </div>
+            ) : (
+              <>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <Card className="border-2 border-primary/20 bg-gradient-to-br from-primary/5 to-transparent">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                        <Target className="h-4 w-4" />
+                        Tasks Completed
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-4xl font-bold text-primary">{weeklyStats.completed}</div>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="border-2 border-primary/20 bg-gradient-to-br from-primary/5 to-transparent">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                        <TrendingUp className="h-4 w-4" />
+                        Performance Score
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-4xl font-bold text-primary">{weeklyStats.scoreOutOf100}/100</div>
+                      <p className="text-xs text-muted-foreground mt-1">{weeklyStats.score} points earned</p>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                <Card>
+                  <CardContent className="pt-6">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-muted-foreground flex items-center gap-2">
+                        <Calendar className="h-4 w-4" />
+                        {format(startOfWeek(new Date(), { weekStartsOn: 1 }), "MMM d")} - {format(endOfWeek(new Date(), { weekStartsOn: 1 }), "MMM d, yyyy")}
+                      </span>
                     </div>
-                    <div className="flex justify-between items-center p-4 bg-card border border-border rounded-lg">
-                      <span className="text-muted-foreground">Score Earned</span>
-                      <span className="text-2xl font-bold text-primary">{weeklyStats.score}</span>
-                    </div>
-                    <p className="text-xs text-muted-foreground text-center mt-4">
-                      Week: {format(startOfWeek(new Date(), { weekStartsOn: 1 }), "MMM d")} - {format(endOfWeek(new Date(), { weekStartsOn: 1 }), "MMM d, yyyy")}
-                    </p>
-                  </>
-                )}
-              </CardContent>
-            </Card>
+                  </CardContent>
+                </Card>
+              </>
+            )}
           </TabsContent>
 
-          <TabsContent value="monthly" className="space-y-4 mt-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">This Month</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {loading ? (
-                  <p className="text-muted-foreground">Loading...</p>
-                ) : (
-                  <>
-                    <div className="flex justify-between items-center p-4 bg-card border border-border rounded-lg">
-                      <span className="text-muted-foreground">Tasks Completed</span>
-                      <span className="text-2xl font-bold text-primary">{monthlyStats.completed}</span>
+          <TabsContent value="monthly" className="space-y-4 mt-6">
+            {loading ? (
+              <div className="flex items-center justify-center py-12">
+                <p className="text-muted-foreground">Loading...</p>
+              </div>
+            ) : (
+              <>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <Card className="border-2 border-primary/20 bg-gradient-to-br from-primary/5 to-transparent">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                        <Target className="h-4 w-4" />
+                        Tasks Completed
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-4xl font-bold text-primary">{monthlyStats.completed}</div>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="border-2 border-primary/20 bg-gradient-to-br from-primary/5 to-transparent">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                        <TrendingUp className="h-4 w-4" />
+                        Performance Score
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-4xl font-bold text-primary">{monthlyStats.scoreOutOf100}/100</div>
+                      <p className="text-xs text-muted-foreground mt-1">{monthlyStats.score} points earned</p>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                <Card>
+                  <CardContent className="pt-6">
+                    <div className="flex items-center justify-between text-sm mb-2">
+                      <span className="text-muted-foreground flex items-center gap-2">
+                        <Calendar className="h-4 w-4" />
+                        {format(startOfMonth(new Date()), "MMM d")} - {format(endOfMonth(new Date()), "MMM d, yyyy")}
+                      </span>
                     </div>
-                    <div className="flex justify-between items-center p-4 bg-card border border-border rounded-lg">
-                      <span className="text-muted-foreground">Score Earned</span>
-                      <span className="text-2xl font-bold text-primary">{monthlyStats.score}</span>
-                    </div>
-                    <p className="text-xs text-muted-foreground text-center mt-4">
-                      Month: {format(startOfMonth(new Date()), "MMM d")} - {format(endOfMonth(new Date()), "MMM d, yyyy")}
-                    </p>
-                  </>
-                )}
-              </CardContent>
-            </Card>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg">Weekly Breakdown</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {weeklyBreakdown.map((week) => (
+                      <div 
+                        key={week.weekNumber}
+                        className="flex items-center justify-between p-4 rounded-lg border border-border bg-card hover:bg-accent/50 transition-colors"
+                      >
+                        <div className="flex-1">
+                          <div className="font-medium">Week {week.weekNumber}</div>
+                          <div className="text-xs text-muted-foreground">{week.dateRange}</div>
+                        </div>
+                        <div className="flex items-center gap-6">
+                          <div className="text-right">
+                            <div className="text-sm text-muted-foreground">Tasks</div>
+                            <div className="text-lg font-bold text-primary">{week.completed}</div>
+                          </div>
+                          <div className="text-right">
+                            <div className="text-sm text-muted-foreground">Score</div>
+                            <div className="text-lg font-bold text-primary">{week.score}</div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              </>
+            )}
           </TabsContent>
         </Tabs>
       </DialogContent>
