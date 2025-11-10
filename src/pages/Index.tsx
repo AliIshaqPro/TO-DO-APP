@@ -2,11 +2,12 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
 import { TaskItem } from "@/components/TaskItem";
 import { AddTaskForm } from "@/components/AddTaskForm";
 import { NotificationCenter, Notification } from "@/components/NotificationCenter";
 import { DateTaskViewer } from "@/components/DateTaskViewer";
-import { Calendar, History, Repeat, LogOut } from "lucide-react";
+import { Calendar, History, Repeat, LogOut, ArrowUp } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
@@ -44,6 +45,7 @@ const Index = () => {
   const [history, setHistory] = useState<Task[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showScrollTop, setShowScrollTop] = useState(false);
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -64,6 +66,15 @@ const Index = () => {
       fetchNotifications();
     }
   }, [user]);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      setShowScrollTop(window.scrollY > 300);
+    };
+
+    window.addEventListener("scroll", handleScroll);
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
 
   const fetchTasks = async () => {
     setLoading(true);
@@ -298,6 +309,15 @@ const Index = () => {
 
   const todayTasks = tasks.filter((task) => !task.recurring).sort((a, b) => a.position - b.position);
   const recurringTasks = tasks.filter((task) => task.recurring).sort((a, b) => a.position - b.position);
+  const allTodayTasks = [...todayTasks, ...recurringTasks].sort((a, b) => a.position - b.position);
+
+  const completedCount = allTodayTasks.filter((t) => t.completed).length;
+  const totalCount = allTodayTasks.length;
+  const progressPercentage = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
+
+  const scrollToTop = () => {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
 
   if (authLoading || loading) {
     return (
@@ -314,16 +334,27 @@ const Index = () => {
   return (
     <div className="min-h-screen bg-background p-4 md:p-8">
       <div className="max-w-4xl mx-auto">
-        <div className="flex justify-between items-center mb-6">
-          <Button variant="ghost" size="icon" onClick={handleLogout}>
-            <LogOut className="h-5 w-5" />
-          </Button>
-          <NotificationCenter
-            notifications={notifications}
-            onMarkAsRead={markNotificationAsRead}
-            onDelete={deleteNotification}
-            onClearAll={clearAllNotifications}
-          />
+        <div className="sticky top-0 z-10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 pb-4 mb-2">
+          <div className="flex justify-between items-center mb-4">
+            <Button variant="ghost" size="icon" onClick={handleLogout}>
+              <LogOut className="h-5 w-5" />
+            </Button>
+            <NotificationCenter
+              notifications={notifications}
+              onMarkAsRead={markNotificationAsRead}
+              onDelete={deleteNotification}
+              onClearAll={clearAllNotifications}
+            />
+          </div>
+          {totalCount > 0 && (
+            <div className="space-y-2">
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-muted-foreground">Today's Progress</span>
+                <span className="font-medium">{Math.round(progressPercentage)}% completed</span>
+              </div>
+              <Progress value={progressPercentage} className="h-2" />
+            </div>
+          )}
         </div>
 
         <div className="mb-6">
@@ -361,14 +392,14 @@ const Index = () => {
               collisionDetection={closestCenter}
               onDragEnd={(e) => handleDragEnd(e, false)}
             >
-              <SortableContext items={todayTasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
-                {todayTasks.length === 0 ? (
+              <SortableContext items={allTodayTasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
+                {allTodayTasks.length === 0 ? (
                   <div className="text-center py-12 text-muted-foreground">
                     <Calendar className="h-12 w-12 mx-auto mb-3 opacity-50" />
                     <p>No tasks for today. Add one to get started!</p>
                   </div>
                 ) : (
-                  todayTasks.map((task) => (
+                  allTodayTasks.map((task) => (
                     <TaskItem
                       key={task.id}
                       id={task.id}
@@ -385,32 +416,25 @@ const Index = () => {
           </TabsContent>
 
           <TabsContent value="recurring" className="space-y-3 mt-6">
-            <DndContext
-              sensors={sensors}
-              collisionDetection={closestCenter}
-              onDragEnd={(e) => handleDragEnd(e, true)}
-            >
-              <SortableContext items={recurringTasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
-                {recurringTasks.length === 0 ? (
-                  <div className="text-center py-12 text-muted-foreground">
-                    <Repeat className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                    <p>No recurring tasks yet. Create daily habits!</p>
-                  </div>
-                ) : (
-                  recurringTasks.map((task) => (
-                    <TaskItem
-                      key={task.id}
-                      id={task.id}
-                      title={task.title}
-                      completed={task.completed}
-                      recurring={task.recurring}
-                      onToggle={toggleTask}
-                      onDelete={deleteTask}
-                    />
-                  ))
-                )}
-              </SortableContext>
-            </DndContext>
+            {recurringTasks.length === 0 ? (
+              <div className="text-center py-12 text-muted-foreground">
+                <Repeat className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                <p>No recurring tasks yet. Create daily habits!</p>
+              </div>
+            ) : (
+              recurringTasks.map((task) => (
+                <TaskItem
+                  key={task.id}
+                  id={task.id}
+                  title={task.title}
+                  completed={task.completed}
+                  recurring={task.recurring}
+                  onToggle={toggleTask}
+                  onDelete={deleteTask}
+                  showCheckbox={false}
+                />
+              ))
+            )}
           </TabsContent>
 
           <TabsContent value="history" className="space-y-3 mt-6">
@@ -436,6 +460,17 @@ const Index = () => {
             )}
           </TabsContent>
         </Tabs>
+
+        {showScrollTop && (
+          <Button
+            onClick={scrollToTop}
+            size="icon"
+            className="fixed bottom-8 right-8 rounded-full shadow-lg"
+            aria-label="Scroll to top"
+          >
+            <ArrowUp className="h-5 w-5" />
+          </Button>
+        )}
       </div>
     </div>
   );

@@ -15,6 +15,7 @@ interface TaskItemProps {
   showDate?: boolean;
   completedAt?: string;
   completed_at?: string;
+  showCheckbox?: boolean;
 }
 
 export const TaskItem = ({
@@ -27,6 +28,7 @@ export const TaskItem = ({
   showDate,
   completedAt,
   completed_at,
+  showCheckbox = true,
 }: TaskItemProps) => {
   const {
     attributes,
@@ -54,23 +56,28 @@ export const TaskItem = ({
         isDragging && "opacity-50 z-50"
       )}
     >
-      <button
-        className="cursor-grab active:cursor-grabbing touch-none text-muted-foreground hover:text-foreground transition-colors"
-        {...attributes}
-        {...listeners}
-      >
-        <GripVertical className="h-5 w-5" />
-      </button>
-      <Checkbox
-        id={id}
-        checked={completed}
-        onCheckedChange={() => onToggle(id)}
-        className="h-5 w-5"
-      />
+      {showCheckbox && (
+        <button
+          className="cursor-grab active:cursor-grabbing touch-none text-muted-foreground hover:text-foreground transition-colors"
+          {...attributes}
+          {...listeners}
+        >
+          <GripVertical className="h-5 w-5" />
+        </button>
+      )}
+      {showCheckbox && (
+        <Checkbox
+          id={id}
+          checked={completed}
+          onCheckedChange={() => onToggle(id)}
+          className="h-5 w-5"
+        />
+      )}
       <label
-        htmlFor={id}
+        htmlFor={showCheckbox ? id : undefined}
         className={cn(
-          "flex-1 text-base cursor-pointer transition-smooth",
+          "flex-1 text-base transition-smooth",
+          showCheckbox && "cursor-pointer",
           completed && "line-through text-muted-foreground"
         )}
       >
