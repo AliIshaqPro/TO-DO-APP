@@ -1,1 +1,4 @@
-project_id = "qhhdcdcdmkcmskcmsc"
+project_id = "qhhfjztpgdoubwzoyugl"
+
+[functions.reset-daily-tasks]
+verify_jwt = false
